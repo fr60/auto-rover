@@ -41,3 +41,9 @@ EOF
 echo "==> Enabling and restarting gpsd..."
 sudo systemctl enable gpsd
 sudo systemctl restart gpsd
+
+echo ""
+echo "==> Done. Test with:"
+echo "    cgps -s          (live satellite view)"
+echo "    gpsmon           (raw NMEA stream)"
+echo "    python3 test_gps.py  (Python fix test)"

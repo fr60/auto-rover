@@ -1,0 +1,11 @@
+[Unit]
+Description=Rover OTA updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+ExecStart=/bin/bash /home/fareed/rover/ota_update.sh
+StandardOutput=journal
+StandardError=journal

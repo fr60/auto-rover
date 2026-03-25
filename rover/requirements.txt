@@ -1,0 +1,6 @@
+gpsd-py3
+adafruit-circuitpython-bno08x
+adafruit-blinka
+pigpio
+opencv-python-headless
+picamera2

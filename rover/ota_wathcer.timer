@@ -1,0 +1,11 @@
+[Unit]
+Description=Rover OTA update timer
+Requires=ota_watcher.service
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30
+Unit=ota_watcher.service
+
+[Install]
+WantedBy=timers.target
