@@ -101,9 +101,9 @@ class _RealGPS:
                     for line in lines[:-1]:
                         line = line.strip()
                         if line.startswith('$GNGGA') or line.startswith('$GPGGA'):
-                            return self._parse_gga(line)
-                        elif line.startswith('$GNRMC') or line.startswith('$GPRMC'):
-                            return self._parse_rmc(line)
+                            result = self._parse_gga(line)
+                            if result:
+                                return result
                 
                 return None
         except Exception as e:
@@ -192,13 +192,20 @@ class _RealGPS:
         if not coord:
             return 0.0
         
-        # NMEA format: DDMM.MMMM or DDDMM.MMMM
-        if len(coord) > 9:  # Longitude
-            degrees = float(coord[:3])
-            minutes = float(coord[3:])
-        else:  # Latitude
+        # NMEA format: DDMM.MMMM (lat) or DDDMM.MMMM (lon)
+        # Find the decimal point to figure out where degrees end
+        dot_pos = coord.find('.')
+        if dot_pos == -1:
+            return 0.0
+        
+        # For latitude: DDMM.MMMM (2 digits for degrees)
+        # For longitude: DDDMM.MMMM (3 digits for degrees)
+        if len(coord) < 10:  # Latitude
             degrees = float(coord[:2])
             minutes = float(coord[2:])
+        else:  # Longitude
+            degrees = float(coord[:3])
+            minutes = float(coord[3:])
         
         decimal = degrees + (minutes / 60.0)
         
