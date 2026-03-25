@@ -188,31 +188,41 @@ class _RealGPS:
             return None
 
     def _nmea_to_decimal(self, coord: str, direction: str) -> float:
-        """Convert NMEA coordinate to decimal degrees."""
+        """Convert NMEA coordinate to decimal degrees.
+        
+        NMEA format:
+        - Latitude: DDMM.MMMM (e.g., 5212.5314 = 52°12.5314')
+        - Longitude: DDDMM.MMMM (e.g., 00113.0248 = 1°13.0248')
+        """
         if not coord:
             return 0.0
         
-        # NMEA format: DDMM.MMMM (lat) or DDDMM.MMMM (lon)
-        # Find the decimal point to figure out where degrees end
-        dot_pos = coord.find('.')
-        if dot_pos == -1:
+        try:
+            # Determine if it's latitude (2 degree digits) or longitude (3 degree digits)
+            # by checking length before decimal point
+            dot_pos = coord.find('.')
+            if dot_pos == -1:
+                return 0.0
+            
+            # Latitude: DDMM.MMMM (dot at position 4)
+            # Longitude: DDDMM.MMMM (dot at position 5)
+            if dot_pos == 4:  # Latitude
+                degrees = float(coord[:2])
+                minutes = float(coord[2:])
+            elif dot_pos == 5:  # Longitude
+                degrees = float(coord[:3])
+                minutes = float(coord[3:])
+            else:
+                return 0.0
+            
+            decimal = degrees + (minutes / 60.0)
+            
+            if direction in ['S', 'W']:
+                decimal = -decimal
+            
+            return decimal
+        except (ValueError, IndexError):
             return 0.0
-        
-        # For latitude: DDMM.MMMM (2 digits for degrees)
-        # For longitude: DDDMM.MMMM (3 digits for degrees)
-        if len(coord) < 10:  # Latitude
-            degrees = float(coord[:2])
-            minutes = float(coord[2:])
-        else:  # Longitude
-            degrees = float(coord[:3])
-            minutes = float(coord[3:])
-        
-        decimal = degrees + (minutes / 60.0)
-        
-        if direction in ['S', 'W']:
-            decimal = -decimal
-        
-        return decimal
 
     def __repr__(self):
         fix = "fix" if self.has_fix() else "no fix"
