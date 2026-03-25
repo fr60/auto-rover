@@ -21,7 +21,7 @@ logging.basicConfig(
  
 sys.path.insert(0, "firmware")
  
-from firmware.rover.gps import GPS
+from rover.gps import GPS
  
 def main():
     print("\n── GPS test ───────────────────────────────────")
