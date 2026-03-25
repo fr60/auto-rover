@@ -88,12 +88,23 @@ class _RealGPS:
     def position(self) -> Optional[GPSPosition]:
         try:
             with socket.create_connection((self._host, self._port), timeout=5) as sock:
-                # Read data until we get a GGA sentence
-                data = sock.recv(4096).decode(errors='ignore')
-                for line in data.split('\n'):
-                    line = line.strip()
-                    if line.startswith('$GNGGA') or line.startswith('$GPGGA'):
-                        return self._parse_gga(line)
+                buffer = ""
+                # Read multiple chunks to get complete sentences
+                for _ in range(5):  # Try up to 5 reads
+                    data = sock.recv(4096).decode(errors='ignore')
+                    buffer += data
+                    
+                    # Process complete lines
+                    lines = buffer.split('\n')
+                    buffer = lines[-1]  # Keep incomplete line for next iteration
+                    
+                    for line in lines[:-1]:
+                        line = line.strip()
+                        if line.startswith('$GNGGA') or line.startswith('$GPGGA'):
+                            return self._parse_gga(line)
+                        elif line.startswith('$GNRMC') or line.startswith('$GPRMC'):
+                            return self._parse_rmc(line)
+                
                 return None
         except Exception as e:
             log.warning(f"GPS read error: {e}")
@@ -139,6 +150,41 @@ class _RealGPS:
             )
         except Exception as e:
             log.debug(f"Failed to parse GGA: {sentence[:50]}, error: {e}")
+            return None
+
+    def _parse_rmc(self, sentence: str) -> Optional[GPSPosition]:
+        """Parse NMEA RMC sentence (Recommended Minimum)."""
+        try:
+            parts = sentence.split(',')
+            if len(parts) < 12:
+                return None
+            
+            # Check status (A = active, V = void)
+            if parts[2] != 'A':
+                return None
+            
+            # Parse latitude
+            lat = self._nmea_to_decimal(parts[3], parts[4])
+            # Parse longitude
+            lon = self._nmea_to_decimal(parts[5], parts[6])
+            # Speed in knots, convert to m/s
+            speed = float(parts[7]) * 0.514444 if parts[7] else 0.0
+            # Track angle
+            heading = float(parts[8]) if parts[8] else 0.0
+            
+            return GPSPosition(
+                lat=lat,
+                lon=lon,
+                alt=0.0,
+                fix_quality=1,  # RMC doesn't specify quality, assume GPS fix
+                speed=speed,
+                heading=heading,
+                satellites=0,
+                hdop=99.9,
+                timestamp=time.time(),
+            )
+        except Exception as e:
+            log.debug(f"Failed to parse RMC: {sentence[:50]}, error: {e}")
             return None
 
     def _nmea_to_decimal(self, coord: str, direction: str) -> float:
