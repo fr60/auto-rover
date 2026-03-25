@@ -3,7 +3,7 @@ firmware/rover/gps.py
 ────────────
 F9P GPS reader with null-object fallback.
  
-If the F9P is not connected or gpsd is not running, the module
+If the F9P is not connected or ser2net is not running, the module
 returns a NullGPS instance that always reports no fix — the rest
 of the system never sees an exception.
  
@@ -17,6 +17,7 @@ Usage:
 """
 
 import time
+import socket
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -57,61 +58,112 @@ class NullGPS:
 # ──────────── Real GPS (wraps gpsd-py3) ─────────────────────────────────
 
 class _RealGPS:
-    """Reads from gpsd which in turn reads from the F9P over USB."""
+    """Reads from ser2net which forwards F9P serial data over TCP."""
 
-    # Fix quality codes from the F9P
+    # Fix quality codes from NMEA GGA
     FIX_NONE     = 0
     FIX_GPS      = 1
     FIX_DGPS     = 2
-    FIX_RTK_FIX = 4
-    FIX_RTK_FLT = 5
+    FIX_PPS      = 3
+    FIX_RTK_FIX  = 4
+    FIX_RTK_FLT  = 5
 
-    def __init__(self):
-        import gpsd
-        self._gpsd = gpsd
-        self._gpsd.connect()
-        log.info("GPS connected to gpsd")
+    def __init__(self, host="localhost", port=3002):
+        self._host = host
+        self._port = port
+        self._buffer = ""
+        log.info(f"GPS connecting to ser2net at {host}:{port}")
 
     def is_available(self) -> bool:
-        return True
-    
-
-    def has_fix(self) -> bool:
         try:
-            packet = self._gpsd.get_current()
-            return packet.mode >= 2   # 2=2D fix, 3=3D fix
+            with socket.create_connection((self._host, self._port), timeout=2):
+                return True
         except Exception:
             return False
 
+    def has_fix(self) -> bool:
+        pos = self.position()
+        return pos is not None and pos.fix_quality > 0
 
     def position(self) -> Optional[GPSPosition]:
         try:
-            p = self._gpsd.get_current()
-            if p.mode < 2:
+            with socket.create_connection((self._host, self._port), timeout=5) as sock:
+                # Read data until we get a GGA sentence
+                data = sock.recv(4096).decode(errors='ignore')
+                for line in data.split('\n'):
+                    line = line.strip()
+                    if line.startswith('$GNGGA') or line.startswith('$GPGGA'):
+                        return self._parse_gga(line)
                 return None
-
-            return GPSPosition(
-                lat         = p.lat,
-                lon         = p.lon,
-                alt         = getattr(p, 'alt', 0.0),
-                speed       = getattr(p, 'hspeed', 0.0),
-                heading     = getattr(p, 'track', 0.0),
-                fix_quality = getattr(p, 'mode', 0),
-                satellites  = getattr(p, 'sats', 0),
-                hdop        = getattr(p, 'hdop', 99.9),
-                timestamp   = time.time(),
-            )
         except Exception as e:
             log.warning(f"GPS read error: {e}")
             return None
 
+    def _parse_gga(self, sentence: str) -> Optional[GPSPosition]:
+        """Parse NMEA GGA sentence."""
+        try:
+            parts = sentence.split(',')
+            if len(parts) < 15:
+                return None
+
+            # Extract fix quality
+            fix_quality = int(parts[6]) if parts[6] else 0
+            if fix_quality == 0:
+                return None
+
+            # Parse latitude
+            lat_raw = parts[2]
+            lat_dir = parts[3]
+            lat = self._nmea_to_decimal(lat_raw, lat_dir)
+
+            # Parse longitude
+            lon_raw = parts[4]
+            lon_dir = parts[5]
+            lon = self._nmea_to_decimal(lon_raw, lon_dir)
+
+            # Parse other fields
+            num_sats = int(parts[7]) if parts[7] else 0
+            hdop = float(parts[8]) if parts[8] else 99.9
+            altitude = float(parts[9]) if parts[9] else 0.0
+
+            return GPSPosition(
+                lat=lat,
+                lon=lon,
+                alt=altitude,
+                fix_quality=fix_quality,
+                speed=0.0,  # GGA doesn't have speed, need RMC for that
+                heading=0.0,  # GGA doesn't have heading
+                satellites=num_sats,
+                hdop=hdop,
+                timestamp=time.time(),
+            )
+        except Exception as e:
+            log.debug(f"Failed to parse GGA: {sentence[:50]}, error: {e}")
+            return None
+
+    def _nmea_to_decimal(self, coord: str, direction: str) -> float:
+        """Convert NMEA coordinate to decimal degrees."""
+        if not coord:
+            return 0.0
+        
+        # NMEA format: DDMM.MMMM or DDDMM.MMMM
+        if len(coord) > 9:  # Longitude
+            degrees = float(coord[:3])
+            minutes = float(coord[3:])
+        else:  # Latitude
+            degrees = float(coord[:2])
+            minutes = float(coord[2:])
+        
+        decimal = degrees + (minutes / 60.0)
+        
+        if direction in ['S', 'W']:
+            decimal = -decimal
+        
+        return decimal
 
     def __repr__(self):
         fix = "fix" if self.has_fix() else "no fix"
         return f"GPS({fix})"
-    
-
-
 
 # ─── Factory function ───────────────────────────────────────────────────
 def GPS() -> "_RealGPS | NullGPS":
