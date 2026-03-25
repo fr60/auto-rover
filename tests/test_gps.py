@@ -58,23 +58,6 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nStopped.")
-
-    print("\n── Raw GPS data test ──────────────────────────")
-    HOST = "localhost"
-    PORT = 3002
-
-    print(f"Reading raw GPS data from {HOST}:{PORT}")
-    print("Press Ctrl+C to stop.\n")
-
-    try:
-        with socket.create_connection((HOST, PORT), timeout=5) as sock:
-            while True:
-                data = sock.recv(1024).decode(errors='ignore')
-                print(data, end='')
-    except KeyboardInterrupt:
-        print("\nStopped.")
-    except Exception as e:
-        print(f"Error: {e}")
  
 if __name__ == "__main__":
     main()
