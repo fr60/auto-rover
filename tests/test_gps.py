@@ -11,7 +11,10 @@ Run on the Pi:
  
 import sys
 import time
-import logging 
+import logging
+
+sys.path.insert(0, "firmware")
+
 from firmware.rover.gps import GPS
 
 logging.basicConfig(
@@ -19,8 +22,6 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     datefmt="%H:%M:%S",
 )
- 
-sys.path.insert(0, "firmware")
  
  
 def main():
