@@ -1,0 +1,13 @@
+rover/
+  main.py          ← mode manager + main loop
+  arbiter.py       ← sensor health polling + mode assignment
+  gps.py           ← F9P reader, returns NullGPS if unavailable
+  imu.py           ← BNO085 reader, returns NullIMU if unavailable
+  camera.py        ← IMX500 reader, returns NullCamera if unavailable
+  motors.py        ← DRV8833 PWM, always required
+  autopilot.py     ← uses gps + imu
+  manual.py        ← keyboard over SSH
+  config.yaml      ← thresholds, GPIO pins, speeds
+  waypoints.json   ← lat/lon waypoint list
+  rover.service    ← systemd unit
+  ota_update.sh    ← git pull + service restart
