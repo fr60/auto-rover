@@ -18,6 +18,7 @@ Tests:
 import sys
 import time
 import logging
+import cv2
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -63,6 +64,11 @@ def main():
     print(f"  Shape:  {frame.shape}   (H x W x channels)")
     print(f"  Dtype:  {frame.dtype}")
     print(f"  Min:    {frame.min()}   Max: {frame.max()}")
+
+     # ── Save image ────────────────────────────────────────────
+    out_path = Path(__file__).parent / "test_capture.jpg"
+    cv2.imwrite(str(out_path), cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    print(f"  Saved: {out_path}")
 
     expected_shape = (480, 640, 3)
     if frame.shape == expected_shape:
