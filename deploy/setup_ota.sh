@@ -105,7 +105,7 @@ echo "── Step 5: System packages ──────────────�
 echo "  Updating package list..."
 sudo apt-get update -q
 echo "  Installing gpsd, pigpio, python3-pip, imx500-all..."
-sudo apt-get install -y gpsd gpsd-clients pigpio python3-pigpio python3-pip imx500-all \
+sudo apt-get install -y gpsd gpsd-clients pigpio python3-pip python3-pigpio python3-numpy python3-picamera2 imx500-all \
     --no-install-recommends -q
 echo "  Done."
  
