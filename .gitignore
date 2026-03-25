@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+ 
+# Logs
+*.log
+logs/
+ 
+# OS
+.DS_Store
+Thumbs.db
+ 
+# Editor
+.vscode/
+.idea/
+ 
+# Runtime — never commit these
+config/waypoints_local.json
+ 
+# Local override configs (optional, never commit)
+config/config_local.yaml
