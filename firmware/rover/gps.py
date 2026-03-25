@@ -1,5 +1,5 @@
 """
-rover/gps.py
+firmware/rover/gps.py
 ────────────
 F9P GPS reader with null-object fallback.
  

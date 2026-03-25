@@ -1,0 +1,34 @@
+# No code changes needed for tuning values.
+ 
+# ── Motor GPIO pins (BCM numbering) ──────────────────────────
+motors:
+  FL_IN1: 12    # DRV8833 A — front-left
+  FL_IN2: 13
+  FR_IN3: 16    # DRV8833 A — front-right
+  FR_IN4: 20
+  RL_IN1: 24    # DRV8833 B — rear-left
+  RL_IN2: 25
+  RR_IN3: 26    # DRV8833 B — rear-right
+  RR_IN4: 27
+  pwm_freq: 1000
+ 
+# ── Navigation ────────────────────────────────────────────────
+navigation:
+  waypoint_radius_m: 0.5      # metres — how close = "reached waypoint"
+  base_speed: 0.5             # 0.0 to 1.0
+  max_speed: 0.8
+  steering_gain: 0.8          # P-controller gain for bearing correction
+ 
+# ── GPS ───────────────────────────────────────────────────────
+gps:
+  min_fix_quality: 1          # 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float
+  min_satellites: 4
+ 
+# ── IMU ───────────────────────────────────────────────────────
+imu:
+  spi_bus: 0
+  spi_device: 0               # CE0 = GPIO8
+ 
+# ── Logging ───────────────────────────────────────────────────
+logging:
+  level: INFO                 # DEBUG, INFO, WARNING, ERROR

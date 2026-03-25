@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/fareed/rover
+WorkingDirectory=/home/fareed/auto-rover/deploy/
 ExecStart=/usr/bin/python3 -u main.py
 Restart=on-failure
 RestartSec=5

@@ -1,0 +1,30 @@
+{
+  "mission": "garden_loop",
+  "description": "Example waypoint mission — replace with real coordinates",
+  "waypoints": [
+    {
+      "id": 1,
+      "lat": 51.5,
+      "lon": -0.1,
+      "label": "Start"
+    },
+    {
+      "id": 2,
+      "lat": 51.50005,
+      "lon": -0.1,
+      "label": "Point A"
+    },
+    {
+      "id": 3,
+      "lat": 51.50005,
+      "lon": -0.0999,
+      "label": "Point B"
+    },
+    {
+      "id": 4,
+      "lat": 51.5,
+      "lon": -0.0999,
+      "label": "Point C"
+    }
+  ]
+}
