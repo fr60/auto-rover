@@ -16,17 +16,16 @@
 #   chmod +x setup_ota.sh
 #   ./setup_ota.sh
 # ─────────────────────────────────────────────────────────────
-
-
+ 
 set -e
-# ── Auto-detect user and paths ────────────────────────────────
+ 
 CURRENT_USER=$(whoami)
 HOME_DIR=$(eval echo "~$CURRENT_USER")
 KEY_FILE="$HOME_DIR/.ssh/rover_deploy_key"
 SSH_CONFIG="$HOME_DIR/.ssh/config"
 ROVER_DIR="$HOME_DIR/auto-rover"
 DEPLOY_DIR="$ROVER_DIR/deploy"
-
+ 
 echo ""
 echo "════════════════════════════════════════════════════"
 echo "  Rover Pi setup"
@@ -35,7 +34,7 @@ echo "  User:    $CURRENT_USER"
 echo "  Home:    $HOME_DIR"
 echo "  Project: $ROVER_DIR"
 echo ""
-
+ 
 # ── 1. SSH deploy key ─────────────────────────────────────────
 echo "── Step 1: SSH deploy key ───────────────────────────"
 if [ -f "$KEY_FILE" ]; then
@@ -66,8 +65,7 @@ EOF
     chmod 600 "$SSH_CONFIG"
     echo "  Done."
 fi
-
-
+ 
 # ── 3. Test GitHub connection ─────────────────────────────────
 echo ""
 echo "── Step 3: GitHub connection test ───────────────────"
@@ -87,8 +85,7 @@ else
     echo "  Then re-run this script."
     exit 1
 fi
-
-
+ 
 # ── 4. Clone repo ─────────────────────────────────────────────
 echo ""
 echo "── Step 4: Clone repo ───────────────────────────────"
@@ -101,8 +98,7 @@ else
     git clone "git@rover-pi-github:$REPO_PATH.git" "$ROVER_DIR"
     echo "  Cloned to $ROVER_DIR"
 fi
-
-
+ 
 # ── 5. System packages ────────────────────────────────────────
 echo ""
 echo "── Step 5: System packages ──────────────────────────"
@@ -124,19 +120,18 @@ if [ -z "$F9P_DEV" ]; then
 else
     echo "  F9P detected at: $F9P_DEV"
 fi
-
+ 
 sudo tee /etc/default/gpsd > /dev/null <<EOF
 START_DAEMON="true"
 GPSD_OPTIONS="-n"
 DEVICES="$F9P_DEV"
 USBAUTO="true"
 EOF
-
+ 
 sudo systemctl enable gpsd
 sudo systemctl restart gpsd
 echo "  gpsd configured and running."
-
-
+ 
 # ── 7. Enable pigpio daemon ───────────────────────────────────
 echo ""
 echo "── Step 7: pigpio daemon ────────────────────────────"
@@ -176,10 +171,8 @@ sudo systemctl enable ota_watcher.timer
 sudo systemctl start  ota_watcher.timer
 echo "  Services installed. OTA watcher active."
  
-# ── 10. Fix paths in ota_update.sh ───────────────────────────
-sed -i "s|/home/pi|$HOME_DIR|g" "$DEPLOY_DIR/ota_update.sh"
-chmod +x "$DEPLOY_DIR/ota_update.sh"
  
+# ── 10. All done (no file rewriting needed)
 # ── Done ──────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════════════════"

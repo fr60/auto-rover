@@ -1,8 +1,25 @@
+
+Copy
+
 #!/bin/bash
+# ─────────────────────────────────────────────────────────────
 # deploy/ota_update.sh — called every 30s by systemd timer
+#
+# Self-contained — detects paths at runtime.
+# Never needs sed -i rewriting. Safe to re-run.
+# ─────────────────────────────────────────────────────────────
+ 
+# Detect the service user's home directory at runtime
+SERVICE_USER=$(stat -c '%U' "$0")
+if [ "$SERVICE_USER" = "root" ] || [ -z "$SERVICE_USER" ]; then
+    # Fall back to the user who owns the rover-project directory
+    ROVER_DIR=$(dirname "$(dirname "$(realpath "$0")")")
+else
+    ROVER_DIR="/home/$SERVICE_USER/auto-rover"
+fi
 
-
-ROVER_DIR="/home/fareed/auto-rover"
+    
+# ROVER_DIR="/home/fareed/auto-rover"
 LOG="/var/log/rover_ota.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
