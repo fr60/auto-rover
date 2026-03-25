@@ -26,7 +26,7 @@ def main():
     log.info("Rover firmware starting...")
  
     # Sensor arbiter decides best available mode
-    from rover.arbiter import Arbiter
+    from firmware.rover.arbiter import Arbiter
     arbiter = Arbiter()
     arbiter.report()
  
@@ -73,4 +73,3 @@ def main():
  
 if __name__ == "__main__":
     main()
-

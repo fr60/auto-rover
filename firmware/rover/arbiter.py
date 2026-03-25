@@ -29,9 +29,9 @@ class Arbiter:
         log.info("Initialising sensors...")
  
         # Each sensor module returns a real object or a null fallback
-        from rover.gps    import GPS
-        from rover.imu    import IMU
-        from rover.camera import Camera
+        from firmware.rover.gps    import GPS
+        from firmware.rover.imu    import IMU
+        from firmware.rover.camera import Camera
  
         self.gps    = GPS()
         self.imu    = IMU()
