@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rover</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f0f; --bg2: #1a1a1a; --bg3: #252525;
+    --border: #2e2e2e; --text: #e8e8e8; --muted: #888;
+    --green: #4ade80; --amber: #fbbf24; --red: #f87171; --blue: #60a5fa;
+    --purple: #a78bfa;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 13px; height: 100vh; overflow: hidden; }
+  .layout { display: grid; grid-template-columns: 1fr 360px; grid-template-rows: 44px 1fr 32px; height: 100vh; gap: 0; }
+
+  /* Top bar */
+  .topbar { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .brand { font-weight: 600; font-size: 14px; letter-spacing: .02em; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11px; background: var(--bg3); border: 1px solid var(--border); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot-ok { background: var(--green); }
+  .dot-warn { background: var(--amber); }
+  .dot-off { background: #444; }
+  .topbar-right { font-size: 11px; color: var(--muted); }
+
+  /* Camera panel */
+  .cam-panel { background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+  .cam-panel img { width: 100%; height: 100%; object-fit: contain; }
+  .cam-overlay { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 8px; }
+  .cam-badge { background: rgba(0,0,0,.7); border: 1px solid #333; border-radius: 4px; padding: 3px 8px; font-size: 11px; color: #ccc; }
+
+  /* Right column */
+  .right-col { display: flex; flex-direction: column; gap: 0; background: var(--bg2); border-left: 1px solid var(--border); overflow-y: auto; }
+  .section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .section-title { font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; }
+
+  /* Mode buttons */
+  .mode-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .mode-btn { padding: 8px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg3); color: var(--muted); font-size: 12px; cursor: pointer; text-align: center; transition: all .15s; }
+  .mode-btn:hover { border-color: #444; color: var(--text); }
+  .mode-btn.active-manual { background: rgba(96,165,250,.15); border-color: var(--blue); color: var(--blue); }
+  .mode-btn.active-autopilot { background: rgba(74,222,128,.15); border-color: var(--green); color: var(--green); }
+  .mode-btn.active-idle { background: rgba(251,191,36,.1); border-color: var(--amber); color: var(--amber); }
+
+  /* D-pad */
+  .dpad { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); gap: 4px; margin: 0 auto; }
+  .dpad-btn { border: 1px solid var(--border); border-radius: 6px; background: var(--bg3); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; user-select: none; transition: background .1s; }
+  .dpad-btn:active, .dpad-btn.pressed { background: #333; }
+  .dpad-stop { background: rgba(248,113,113,.15); border-color: var(--red); color: var(--red); font-size: 11px; font-weight: 600; }
+  .dpad-strafe { font-size: 12px; color: var(--purple); border-color: rgba(167,139,250,.3); }
+  .key-hint { font-size: 10px; color: var(--muted); text-align: center; margin-top: 8px; }
+
+  /* Stats grid */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stat { background: var(--bg3); border-radius: 6px; padding: 8px 10px; }
+  .stat-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .stat-val { font-size: 14px; font-weight: 500; }
+  .ok { color: var(--green); }
+  .warn { color: var(--amber); }
+  .off { color: #555; }
+
+  /* Map */
+  #map { height: 160px; border-radius: 6px; overflow: hidden; }
+  .wp-controls { display: flex; gap: 6px; margin-top: 8px; }
+  .wp-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; color: var(--text); font-size: 12px; outline: none; }
+  .wp-input:focus { border-color: #555; }
+  .wp-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg3); color: var(--muted); font-size: 12px; cursor: pointer; }
+  .wp-btn:hover { background: #2e2e2e; color: var(--text); }
+  .wp-list { margin-top: 8px; max-height: 80px; overflow-y: auto; }
+  .wp-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  .wp-del { cursor: pointer; color: var(--red); padding: 0 4px; }
+
+  /* Status bar */
+  .statusbar { grid-column: 1/-1; display: flex; align-items: center; gap: 16px; padding: 0 14px; background: var(--bg2); border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  .statusbar span { display: flex; align-items: center; gap: 5px; }
+  .ws-status { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="brand">Rover</span>
+      <span class="pill"><span class="dot" id="conn-dot" style="background:#444"></span><span id="conn-text">Connecting...</span></span>
+      <span class="pill"><span class="dot" id="gps-dot" style="background:#444"></span><span id="gps-text">GPS</span></span>
+      <span class="pill"><span class="dot" id="imu-dot" style="background:#444"></span><span id="imu-text">IMU</span></span>
+      <span class="pill"><span class="dot" id="cam-dot" style="background:#444"></span><span id="cam-text">Camera</span></span>
+    </div>
+    <div class="topbar-right" id="uptime">--</div>
+  </div>
+
+  <!-- Camera feed -->
+  <div class="cam-panel">
+    <img id="cam-img" src="/stream" alt="camera feed" onerror="this.style.opacity='.3'"/>
+    <div class="cam-overlay">
+      <span class="cam-badge" id="cam-fps">-- fps</span>
+      <span class="cam-badge" id="cam-mode">--</span>
+    </div>
+  </div>
+
+  <!-- Right column -->
+  <div class="right-col">
+
+    <!-- Mode -->
+    <div class="section">
+      <div class="section-title">Mode</div>
+      <div class="mode-row">
+        <div class="mode-btn" id="btn-manual"    onclick="setMode('manual')">Manual</div>
+        <div class="mode-btn" id="btn-autopilot" onclick="setMode('autopilot')">Autopilot</div>
+        <div class="mode-btn" id="btn-idle"      onclick="setMode('idle')">Idle</div>
+      </div>
+    </div>
+
+    <!-- Drive controls -->
+    <div class="section">
+      <div class="section-title">Drive · WASD / buttons</div>
+      <div class="dpad">
+        <div class="dpad-btn dpad-strafe" id="btn-q" onmousedown="drive('q')" onmouseup="drive(' ')" ontouchstart="drive('q')" ontouchend="drive(' ')">↙</div>
+        <div class="dpad-btn" id="btn-w" onmousedown="drive('w')" onmouseup="drive(' ')" ontouchstart="drive('w')" ontouchend="drive(' ')">▲</div>
+        <div class="dpad-btn dpad-strafe" id="btn-e" onmousedown="drive('e')" onmouseup="drive(' ')" ontouchstart="drive('e')" ontouchend="drive(' ')">↘</div>
+        <div class="dpad-btn" id="btn-a" onmousedown="drive('a')" onmouseup="drive(' ')" ontouchstart="drive('a')" ontouchend="drive(' ')">◀</div>
+        <div class="dpad-btn dpad-stop" onmousedown="drive(' ')">STOP</div>
+        <div class="dpad-btn" id="btn-d" onmousedown="drive('d')" onmouseup="drive(' ')" ontouchstart="drive('d')" ontouchend="drive(' ')">▶</div>
+        <div></div>
+        <div class="dpad-btn" id="btn-s" onmousedown="drive('s')" onmouseup="drive(' ')" ontouchstart="drive('s')" ontouchend="drive(' ')">▼</div>
+        <div></div>
+      </div>
+      <div class="key-hint">W A S D · Q/E strafe · Space stop</div>
+    </div>
+
+    <!-- Sensor stats -->
+    <div class="section">
+      <div class="section-title">Sensors</div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">GPS fix</div><div class="stat-val" id="s-fix">--</div></div>
+        <div class="stat"><div class="stat-label">Satellites</div><div class="stat-val" id="s-sats">--</div></div>
+        <div class="stat"><div class="stat-label">Heading</div><div class="stat-val" id="s-heading">--</div></div>
+        <div class="stat"><div class="stat-label">HDOP</div><div class="stat-val" id="s-hdop">--</div></div>
+        <div class="stat"><div class="stat-label">Lat</div><div class="stat-val" id="s-lat" style="font-size:12px">--</div></div>
+        <div class="stat"><div class="stat-label">Lon</div><div class="stat-val" id="s-lon" style="font-size:12px">--</div></div>
+        <div class="stat"><div class="stat-label">Speed</div><div class="stat-val" id="s-speed">--</div></div>
+        <div class="stat"><div class="stat-label">Alt</div><div class="stat-val" id="s-alt">--</div></div>
+      </div>
+    </div>
+
+    <!-- Map + waypoints -->
+    <div class="section">
+      <div class="section-title">Map · Waypoints</div>
+      <div id="map"></div>
+      <div class="wp-controls">
+        <input class="wp-input" id="wp-input" placeholder="51.5001, -0.1000" />
+        <button class="wp-btn" onclick="addWaypoint()">Add</button>
+        <button class="wp-btn" onclick="clearWaypoints()">Clear</button>
+      </div>
+      <div class="wp-list" id="wp-list"></div>
+    </div>
+
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <span><span class="dot" id="ws-dot" style="background:#444"></span><span id="ws-text">WebSocket</span></span>
+    <span><span class="dot" id="motor-dot" style="background:#444"></span>Motors</span>
+    <span id="ap-status" style="display:none; color: var(--green)">Waypoint <span id="ap-wp">0/0</span> · <span id="ap-dist">--</span>m</span>
+    <span class="ws-status" id="mode-display">Mode: --</span>
+  </div>
+
+</div>
+
+<script>
+// ── WebSocket ─────────────────────────────────────────────────
+let ws, reconnectTimer;
+let waypoints = [];
+let roverMarker, map, wpMarkers = [];
+
+function connect() {
+  const host = window.location.host;
+  ws = new WebSocket(`ws://${host}/ws`);
+
+  ws.onopen = () => {
+    clearTimeout(reconnectTimer);
+    setConnected(true);
+  };
+
+  ws.onmessage = e => {
+    try { updateUI(JSON.parse(e.data)); } catch {}
+  };
+
+  ws.onclose = () => {
+    setConnected(false);
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+}
+
+function send(obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+function setConnected(ok) {
+  document.getElementById('conn-dot').style.background  = ok ? 'var(--green)' : '#444';
+  document.getElementById('conn-text').textContent      = ok ? 'Connected' : 'Disconnected';
+  document.getElementById('ws-dot').style.background    = ok ? 'var(--green)' : '#444';
+  document.getElementById('ws-text').textContent        = ok ? 'WebSocket active' : 'Reconnecting...';
+}
+
+// ── State → UI ────────────────────────────────────────────────
+function updateUI(s) {
+  // Mode
+  updateMode(s.mode);
+
+  // GPS
+  const gps = s.gps;
+  const hasGPS = gps.available && gps.fix !== 'none';
+  document.getElementById('gps-dot').style.background = hasGPS ? 'var(--green)' : gps.available ? 'var(--amber)' : '#444';
+  document.getElementById('gps-text').textContent = gps.fix === 'rtk_fixed' ? 'RTK' : gps.fix === 'rtk_float' ? 'RTK~' : gps.fix === 'dgps' ? 'DGPS' : gps.fix === 'gps' ? 'GPS' : 'No fix';
+  setText('s-fix',    gps.fix,                  hasGPS ? 'ok' : 'off');
+  setText('s-sats',   gps.satellites,            gps.satellites >= 6 ? 'ok' : gps.satellites > 0 ? 'warn' : 'off');
+  setText('s-hdop',   gps.hdop,                  gps.hdop < 1.5 ? 'ok' : gps.hdop < 3 ? 'warn' : 'off');
+  setText('s-lat',    gps.lat ? gps.lat.toFixed(6) + '°' : '--');
+  setText('s-lon',    gps.lon ? gps.lon.toFixed(6) + '°' : '--');
+  setText('s-speed',  gps.speed ? gps.speed.toFixed(2) + ' m/s' : '--');
+  setText('s-alt',    gps.alt ? gps.alt.toFixed(1) + ' m' : '--');
+
+  // IMU
+  const imu = s.imu;
+  document.getElementById('imu-dot').style.background = imu.available ? 'var(--green)' : '#444';
+  document.getElementById('imu-text').textContent = 'IMU';
+  if (imu.available) {
+    setText('s-heading', imu.heading.toFixed(1) + '°', 'ok');
+  } else {
+    setText('s-heading', gps.heading ? gps.heading.toFixed(1) + '° (GPS)' : '--', gps.heading ? 'warn' : 'off');
+  }
+
+  // Camera
+  const cam = s.camera;
+  document.getElementById('cam-dot').style.background = cam.available ? 'var(--green)' : '#444';
+  document.getElementById('cam-text').textContent = 'Cam';
+  document.getElementById('cam-fps').textContent = cam.available ? cam.fps + ' fps' : 'no camera';
+
+  // Motors
+  const armed = s.motors.armed;
+  document.getElementById('motor-dot').style.background = armed ? 'var(--green)' : '#444';
+
+  // Autopilot
+  const ap = s.autopilot;
+  const apEl = document.getElementById('ap-status');
+  if (s.mode === 'autopilot' && ap.waypoint_total > 0) {
+    apEl.style.display = 'inline';
+    document.getElementById('ap-wp').textContent = `${ap.waypoint_index}/${ap.waypoint_total}`;
+    document.getElementById('ap-dist').textContent = ap.distance_m.toFixed(1);
+  } else {
+    apEl.style.display = 'none';
+  }
+
+  // Camera mode badge
+  document.getElementById('cam-mode').textContent = s.mode.toUpperCase();
+
+  // Uptime
+  const u = s.system.uptime_s;
+  const h = Math.floor(u / 3600), m = Math.floor((u % 3600) / 60), sec = u % 60;
+  document.getElementById('uptime').textContent =
+    `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+
+  // Map marker
+  if (hasGPS && map) updateMapMarker(gps.lat, gps.lon);
+}
+
+function setText(id, val, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = val;
+  el.className = 'stat-val' + (cls ? ' ' + cls : '');
+}
+
+// ── Mode ──────────────────────────────────────────────────────
+let currentMode = '';
+function updateMode(mode) {
+  if (mode === currentMode) return;
+  currentMode = mode;
+  ['manual','autopilot','idle'].forEach(m => {
+    const btn = document.getElementById('btn-' + m);
+    btn.className = 'mode-btn' + (mode === m ? ' active-' + m : '');
+  });
+  document.getElementById('mode-display').textContent = 'Mode: ' + mode.toUpperCase();
+}
+
+function setMode(mode) {
+  send({ cmd: 'mode', mode });
+}
+
+// ── Drive ─────────────────────────────────────────────────────
+const pressed = new Set();
+
+document.addEventListener('keydown', e => {
+  const k = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  if (!'wasdqe '.includes(k)) return;
+  e.preventDefault();
+  if (pressed.has(k)) return;
+  pressed.add(k);
+  drive(k);
+  document.getElementById('btn-' + k.trim())?.classList.add('pressed');
+});
+
+document.addEventListener('keyup', e => {
+  const k = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  pressed.delete(k);
+  if (pressed.size === 0) drive(' ');
+  document.getElementById('btn-' + k.trim())?.classList.remove('pressed');
+});
+
+function drive(key) {
+  send({ cmd: 'drive', key });
+}
+
+// ── Map ───────────────────────────────────────────────────────
+function initMap() {
+  map = L.map('map', { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.setView([51.5, -0.1], 17);
+}
+
+function updateMapMarker(lat, lon) {
+  if (!roverMarker) {
+    const icon = L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:var(--blue);border-radius:50%;border:2px solid #fff"></div>' });
+    roverMarker = L.marker([lat, lon], { icon }).addTo(map);
+    map.setView([lat, lon], 18);
+  } else {
+    roverMarker.setLatLng([lat, lon]);
+  }
+}
+
+// ── Waypoints ─────────────────────────────────────────────────
+function addWaypoint() {
+  const val = document.getElementById('wp-input').value.trim();
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) {
+    alert('Enter as: lat, lon  e.g.  51.5001, -0.1000');
+    return;
+  }
+  const wp = { id: waypoints.length + 1, lat: parts[0], lon: parts[1] };
+  waypoints.push(wp);
+  document.getElementById('wp-input').value = '';
+  renderWaypoints();
+  saveWaypoints();
+}
+
+function clearWaypoints() {
+  waypoints = [];
+  wpMarkers.forEach(m => map.removeLayer(m));
+  wpMarkers = [];
+  renderWaypoints();
+  saveWaypoints();
+}
+
+function renderWaypoints() {
+  const list = document.getElementById('wp-list');
+  list.innerHTML = '';
+  waypoints.forEach((wp, i) => {
+    const row = document.createElement('div');
+    row.className = 'wp-item';
+    row.innerHTML = `<span>${i+1}. ${wp.lat.toFixed(5)}, ${wp.lon.toFixed(5)}</span><span class="wp-del" onclick="removeWaypoint(${i})">✕</span>`;
+    list.appendChild(row);
+    const m = L.circleMarker([wp.lat, wp.lon], { radius: 6, color: 'var(--amber)', fillColor: 'var(--amber)', fillOpacity: 0.8 })
+      .bindPopup(`WP ${i+1}`).addTo(map);
+    wpMarkers.push(m);
+  });
+}
+
+function removeWaypoint(i) {
+  map.removeLayer(wpMarkers[i]);
+  wpMarkers.splice(i, 1);
+  waypoints.splice(i, 1);
+  renderWaypoints();
+  saveWaypoints();
+}
+
+function saveWaypoints() {
+  fetch('/waypoints', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ waypoints })
+  });
+}
+
+async function loadWaypoints() {
+  try {
+    const r = await fetch('/waypoints');
+    const data = await r.json();
+    waypoints = data.waypoints || [];
+    renderWaypoints();
+  } catch {}
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+initMap();
+loadWaypoints();
+connect();
+</script>
+</body>
+</html>

@@ -5,10 +5,11 @@
 # Handles everything in one script:
 #   1. SSH deploy key for GitHub
 #   2. Clone private repo
-#   3. System packages (gpsd, pigpio)
+#   3. System packages (gpsd, pigpio, libcamera)
 #   4. gpsd configuration for F9P
-#   5. Python dependencies
-#   6. systemd services (rover + OTA watcher)
+#   5. pigpio daemon
+#   6. Python dependencies (firmware + dashboard)
+#   7. systemd services (rover + OTA watcher)
 #
 # Skips any step already completed — safe to re-run.
 #
@@ -104,8 +105,16 @@ echo ""
 echo "── Step 5: System packages ──────────────────────────"
 echo "  Updating package list..."
 sudo apt-get update -q
-echo "  Installing gpsd, pigpio, python3-pip, imx500-all..."
-sudo apt-get install -y gpsd gpsd-clients pigpio python3-pip python3-pigpio python3-numpy python3-picamera2 imx500-all \
+
+echo "  Installing system packages..."
+sudo apt-get install -y \
+    gpsd gpsd-clients \
+    pigpio python3-pigpio \
+    python3-numpy  \
+    python3-pip \
+    libcamera-apps \
+    python3-picamera2 \
+    imx500-all \
     --no-install-recommends -q
 echo "  Done."
  
@@ -143,6 +152,7 @@ echo "  pigpiod running."
 echo ""
 echo "── Step 8: Python dependencies ──────────────────────"
 if [ -f "$ROVER_DIR/requirements.txt" ]; then
+    echo "  Installing from requirements.txt..."
     pip3 install -r "$ROVER_DIR/requirements.txt" \
         --break-system-packages --quiet
     echo "  Python packages installed."
@@ -183,8 +193,13 @@ echo "    sudo systemctl status gpsd"
 echo "    sudo systemctl status pigpiod"
 echo "    sudo systemctl status rover.service"
 echo ""
-echo "  Test GPS:"
-echo "    cd $ROVER_DIR && python3 tests/test_gps.py"
+echo "  Start dashboard:"
+echo "    cd $ROVER_DIR && python3 dashboard/server.py"
+echo "    Then open http://$(hostname -I | awk '{print $1}'):8000"
+echo ""
+echo "  Run tests:"
+echo "    python3 tests/test_gps.py"
+echo "    python3 tests/test_camera.py"
 echo ""
 echo "  OTA: git push from laptop → Pi updates in 30s"
 echo "    tail -f /var/log/rover_ota.log"

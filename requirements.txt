@@ -1,6 +1,14 @@
+# GPS
 gpsd-py3
+
+# IMU
 adafruit-circuitpython-bno08x
 adafruit-blinka
-# pigpio
+
+# Camera
 opencv-python-headless
-# picamera2
+
+# Dashboard server
+fastapi
+uvicorn[standard]
+websockets
