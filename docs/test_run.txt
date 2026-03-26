@@ -1,0 +1,5 @@
+cd
+cd auto-rover
+python3 ./run.sh tests/test_server.py
+
+HOST=<PI_IP> python3 ./run.sh tests/test_server.py
