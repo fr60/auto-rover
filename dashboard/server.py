@@ -1,19 +1,13 @@
 """
 dashboard/server.py
 ────────────────────
-FastAPI server running on the Pi.
-Serves the dashboard UI and provides:
-  - WebSocket  /ws           — pushes rover state + camera frames
-  - GET        /stream       — MJPEG camera stream (fallback)
-  - POST       /mode/{name}  — switch mode (manual/autopilot/idle)
-  - GET/POST   /waypoints    — read/write waypoints.json
-  - POST       /command      — send drive command (w/a/s/d/stop)
+FastAPI dashboard server running on the Pi.
 
-Start with:
-  cd ~/rover-project
-  python3 dashboard/server.py
-
-Then open http://<PI_IP>:8000 on your laptop.
+Architecture:
+- State JSON sent at 10Hz over WebSocket
+- Camera frames sent only when previous frame has been drained
+  (drop-on-busy — never queue frames, prevents buffer backup)
+- Blocking camera capture runs in thread executor
 """
 
 import asyncio
@@ -43,6 +37,7 @@ logging.basicConfig(
 
 app = FastAPI(title="Rover dashboard")
 
+
 # ── Startup ───────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
@@ -51,7 +46,7 @@ async def startup():
     log.info("GPS updater started")
 
 
-# ── Camera — single instance, initialised once ────────────────
+# ── Camera ────────────────────────────────────────────────────
 _camera = None
 
 def get_camera():
@@ -60,6 +55,15 @@ def get_camera():
         _camera = Camera()
         rover_state.update(camera_available=_camera.is_available())
     return _camera
+
+
+def _capture_jpeg(cam) -> bytes | None:
+    """Blocking call — always run via run_in_executor."""
+    frame = cam.frame()
+    if frame is None:
+        return None
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+    return buf.tobytes() if ok else None
 
 
 # ── Dashboard HTML ────────────────────────────────────────────
@@ -72,55 +76,71 @@ async def index():
     return HTMLResponse("<h2>index.html not found</h2>")
 
 
-# ── Camera helpers ───────────────────────────────────────────
-def _capture_jpeg(cam) -> bytes | None:
-    """Blocking — runs in thread executor, never in the event loop."""
-    frame = cam.frame()
-    if frame is None:
-        return None
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
-    return buf.tobytes() if ok else None
-
-
 # ── WebSocket ─────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     log.info("Dashboard connected")
 
-    cam = get_camera()
+    cam         = get_camera()
+    loop        = asyncio.get_event_loop()
     frame_times = []
+    frame_busy  = False   # True while a frame send is in flight
+
+    # Tickers
+    last_state_send = 0.0
+    STATE_INTERVAL  = 0.1    # 10Hz state
+    FRAME_INTERVAL  = 0.05   # attempt frame every 50ms (up to 20fps)
+    last_frame_attempt = 0.0
 
     try:
         while True:
-            t0 = time.monotonic()
+            now = time.monotonic()
 
-            # 1. Send state as JSON
-            await ws.send_text(json.dumps(rover_state.get()))
+            # ── State update at 10Hz ──────────────────────────
+            if now - last_state_send >= STATE_INTERVAL:
+                await ws.send_text(json.dumps(rover_state.get()))
+                last_state_send = now
 
-            # 2. Send camera frame as binary if available
-            if cam.is_available():
-                loop = asyncio.get_event_loop()
-                jpg_bytes = await loop.run_in_executor(None, _capture_jpeg, cam)
-                if jpg_bytes:
-                    await ws.send_bytes(jpg_bytes)
-                    now = time.time()
-                    frame_times.append(now)
-                    frame_times = [t for t in frame_times if now - t < 1.0]
-                    rover_state.update(camera_fps=len(frame_times))
+            # ── Camera frame — drop if busy, never queue ──────
+            if (cam.is_available()
+                    and not frame_busy
+                    and now - last_frame_attempt >= FRAME_INTERVAL):
 
-            # 3. Handle incoming command (non-blocking)
+                last_frame_attempt = now
+                frame_busy = True
+
+                async def send_frame():
+                    nonlocal frame_busy
+                    try:
+                        jpg = await loop.run_in_executor(
+                            None, _capture_jpeg, cam
+                        )
+                        if jpg:
+                            await ws.send_bytes(jpg)
+                            t = time.time()
+                            frame_times.append(t)
+                            # Keep only last 1 second of timestamps
+                            while frame_times and t - frame_times[0] > 1.0:
+                                frame_times.pop(0)
+                            rover_state.update(camera_fps=len(frame_times))
+                    except Exception:
+                        pass
+                    finally:
+                        frame_busy = False
+
+                asyncio.ensure_future(send_frame())
+
+            # ── Incoming commands ─────────────────────────────
             try:
-                data = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+                data = await asyncio.wait_for(
+                    ws.receive_text(), timeout=0.01
+                )
                 await _handle_command(json.loads(data))
             except asyncio.TimeoutError:
                 pass
 
-            # 4. Maintain target rate — send as fast as camera allows
-            elapsed = time.monotonic() - t0
-            sleep   = max(0, 0.033 - elapsed)   # target ~30fps
-            if sleep > 0:
-                await asyncio.sleep(sleep)
+            await asyncio.sleep(0.01)  # 100Hz loop, non-blocking
 
     except WebSocketDisconnect:
         log.info("Dashboard disconnected")
@@ -131,13 +151,10 @@ async def websocket_endpoint(ws: WebSocket):
 async def _handle_command(msg: dict):
     cmd = msg.get("cmd")
     if cmd == "mode":
-        new_mode = msg.get("mode", "idle")
-        rover_state.update(mode=new_mode)
-        log.info(f"Mode → {new_mode}")
+        rover_state.update(mode=msg.get("mode", "idle"))
+        log.info(f"Mode → {msg.get('mode')}")
     elif cmd == "drive":
         _apply_drive(msg.get("key", " "))
-    elif cmd == "stop":
-        rover_state.update(motor_fl=0, motor_fr=0, motor_rl=0, motor_rr=0)
 
 
 def _apply_drive(key: str):
@@ -155,7 +172,7 @@ def _apply_drive(key: str):
         rover_state.update(**cmds[key])
 
 
-# ── MJPEG stream (fallback / direct browser view) ─────────────
+# ── MJPEG fallback ────────────────────────────────────────────
 def _mjpeg_generator():
     cam = get_camera()
     if not cam.is_available():
@@ -170,8 +187,7 @@ def _mjpeg_generator():
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n"
-                + buf.tobytes()
-                + b"\r\n"
+                + buf.tobytes() + b"\r\n"
             )
         time.sleep(0.033)
 
@@ -184,7 +200,7 @@ async def camera_stream():
     )
 
 
-# ── Mode ──────────────────────────────────────────────────────
+# ── REST endpoints ────────────────────────────────────────────
 @app.post("/mode/{name}")
 async def set_mode(name: str):
     if name not in ("manual", "autopilot", "idle"):
@@ -193,7 +209,6 @@ async def set_mode(name: str):
     return {"mode": name}
 
 
-# ── Waypoints ─────────────────────────────────────────────────
 WAYPOINTS_FILE = ROOT / "config" / "waypoints.json"
 
 @app.get("/waypoints")
@@ -207,8 +222,6 @@ async def save_waypoints(data: dict):
     WAYPOINTS_FILE.write_text(json.dumps(data, indent=2))
     return {"saved": True}
 
-
-# ── State (debug) ─────────────────────────────────────────────
 @app.get("/state")
 async def get_state():
     return rover_state.get()
@@ -216,6 +229,7 @@ async def get_state():
 
 # ── Entry point ───────────────────────────────────────────────
 if __name__ == "__main__":
-    log.info("Starting rover dashboard...")
-    log.info(f"Open http://$(hostname -I | cut -d' ' -f1):8000 on your laptop")
+    import socket
+    ip = socket.gethostbyname(socket.gethostname())
+    log.info(f"Dashboard → http://{ip}:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
