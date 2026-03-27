@@ -51,17 +51,67 @@ async def startup():
     """Start background sensor updater threads when server boots."""
     from firmware.rover.gps_updater import start_gps_updater
     start_gps_updater()
-    log.info("GPS updater started")
+    start_camera()
+    log.info("GPS updater and camera thread started")
 
-# ── Camera (shared instance) ──────────────────────────────────
-_camera = None
+# ── Camera frame buffer ───────────────────────────────────────
+# Background thread captures + encodes frames continuously.
+# WebSocket just grabs the latest pre-encoded frame — no blocking.
+import threading as _threading
 
-def get_camera():
-    global _camera
-    if _camera is None:
-        _camera = Camera()
-        rover_state.update(camera_available=_camera.is_available())
-    return _camera
+_latest_frame: bytes | None = None
+_frame_lock   = _threading.Lock()
+_camera       = None
+
+
+def _camera_capture_loop():
+    import cv2
+    global _latest_frame, _camera
+
+    _camera = Camera()
+    rover_state.update(camera_available=_camera.is_available())
+
+    if not _camera.is_available():
+        log.warning("Camera not available — frame buffer idle")
+        return
+
+    frame_times = []
+    log.info("Camera capture thread started")
+
+    while True:
+        frame = _camera.frame()
+        if frame is None:
+            time.sleep(0.01)
+            continue
+
+        ok, buf = cv2.imencode(
+            ".jpg", frame,
+            [cv2.IMWRITE_JPEG_QUALITY, 70]
+        )
+        if ok:
+            with _frame_lock:
+                _latest_frame = buf.tobytes()
+
+        now = time.time()
+        frame_times.append(now)
+        frame_times = [t for t in frame_times if now - t < 1.0]
+        rover_state.update(camera_fps=len(frame_times))
+
+        time.sleep(0.033)  # ~30fps cap
+
+
+def get_latest_frame() -> bytes | None:
+    with _frame_lock:
+        return _latest_frame
+
+
+def start_camera():
+    t = _threading.Thread(
+        target=_camera_capture_loop,
+        daemon=True,
+        name="camera-capture"
+    )
+    t.start()
 
 
 # ── Dashboard HTML page ───────────────────────────────────────
@@ -107,17 +157,14 @@ manager = ConnectionManager()
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
-        frame_tick = 0
         while True:
             # Push state as JSON at 10Hz
             await ws.send_text(json.dumps(rover_state.get()))
 
-            # Push camera frame as binary every other tick (~15fps cap)
-            frame_tick += 1
-            if frame_tick % 2 == 0:
-                frame_bytes = _get_frame_bytes()
-                if frame_bytes:
-                    await ws.send_bytes(frame_bytes)
+            # Push latest pre-encoded frame every tick (~20fps over WiFi)
+            frame_bytes = _get_frame_bytes()
+            if frame_bytes:
+                await ws.send_bytes(frame_bytes)
 
             # Handle incoming commands (non-blocking)
             try:
@@ -126,7 +173,7 @@ async def websocket_endpoint(ws: WebSocket):
             except asyncio.TimeoutError:
                 pass
 
-            await asyncio.sleep(0.1)  # 10Hz
+            await asyncio.sleep(0.05)  # 20Hz
 
     except WebSocketDisconnect:
         manager.disconnect(ws)
@@ -170,16 +217,8 @@ def _apply_drive_command(key: str):
 
 # ── Frame encoder (shared by WebSocket and MJPEG) ────────────────
 def _get_frame_bytes() -> bytes | None:
-    """Capture one frame and return it as a JPEG bytes object."""
-    import cv2
-    cam = get_camera()
-    if not cam.is_available():
-        return None
-    frame = cam.frame()
-    if frame is None:
-        return None
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-    return buf.tobytes() if ok else None
+    """Return the latest pre-encoded frame from the capture thread."""
+    return get_latest_frame()
 
 
 # ── MJPEG camera stream (kept as fallback) ────────────────────
