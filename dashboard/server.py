@@ -107,13 +107,21 @@ manager = ConnectionManager()
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
+        frame_tick = 0
         while True:
-            # Push state to client
+            # Push state as JSON at 10Hz
             await ws.send_text(json.dumps(rover_state.get()))
+
+            # Push camera frame as binary every other tick (~15fps cap)
+            frame_tick += 1
+            if frame_tick % 2 == 0:
+                frame_bytes = _get_frame_bytes()
+                if frame_bytes:
+                    await ws.send_bytes(frame_bytes)
 
             # Handle incoming commands (non-blocking)
             try:
-                data = await asyncio.wait_for(ws.receive_text(), timeout=0.1)
+                data = await asyncio.wait_for(ws.receive_text(), timeout=0.05)
                 await handle_command(json.loads(data))
             except asyncio.TimeoutError:
                 pass
@@ -160,7 +168,21 @@ def _apply_drive_command(key: str):
         rover_state.update(**cmds[key])
 
 
-# ── MJPEG camera stream ───────────────────────────────────────
+# ── Frame encoder (shared by WebSocket and MJPEG) ────────────────
+def _get_frame_bytes() -> bytes | None:
+    """Capture one frame and return it as a JPEG bytes object."""
+    import cv2
+    cam = get_camera()
+    if not cam.is_available():
+        return None
+    frame = cam.frame()
+    if frame is None:
+        return None
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    return buf.tobytes() if ok else None
+
+
+# ── MJPEG camera stream (kept as fallback) ────────────────────
 def _mjpeg_generator():
     import cv2
     cam = get_camera()

@@ -98,7 +98,7 @@
 
   <!-- Camera feed -->
   <div class="cam-panel">
-    <img id="cam-img" src="/stream" alt="camera feed" onerror="this.style.opacity='.3'"/>
+    <canvas id="cam-canvas" style="width:100%;height:100%;object-fit:contain;"></canvas>
     <div class="cam-overlay">
       <span class="cam-badge" id="cam-fps">-- fps</span>
       <span class="cam-badge" id="cam-mode">--</span>
@@ -190,7 +190,11 @@ function connect() {
   };
 
   ws.onmessage = e => {
-    try { updateUI(JSON.parse(e.data)); } catch {}
+    if (typeof e.data === "string") {
+      try { updateUI(JSON.parse(e.data)); } catch {}
+    } else {
+      renderFrame(e.data);
+    }
   };
 
   ws.onclose = () => {
@@ -396,6 +400,34 @@ async function loadWaypoints() {
     waypoints = data.waypoints || [];
     renderWaypoints();
   } catch {}
+}
+
+// ── Camera canvas renderer ───────────────────────────────────
+const canvas = document.getElementById('cam-canvas');
+const ctx = canvas.getContext('2d');
+let frameImg = new Image();
+let frameCount = 0;
+let lastFpsTime = Date.now();
+let displayFps = 0;
+
+frameImg.onload = () => {
+  canvas.width  = frameImg.naturalWidth  || canvas.offsetWidth;
+  canvas.height = frameImg.naturalHeight || canvas.offsetHeight;
+  ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
+  frameCount++;
+  const now = Date.now();
+  if (now - lastFpsTime >= 1000) {
+    displayFps = frameCount;
+    frameCount = 0;
+    lastFpsTime = now;
+    document.getElementById('cam-fps').textContent = displayFps + ' fps';
+  }
+  URL.revokeObjectURL(frameImg.src);
+};
+
+function renderFrame(blob) {
+  const url = URL.createObjectURL(blob instanceof Blob ? blob : new Blob([blob]));
+  frameImg.src = url;
 }
 
 // ── Boot ──────────────────────────────────────────────────────
